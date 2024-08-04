@@ -59,7 +59,7 @@ def get_ohlc(*, curs: Cursor|None=None, code: str, start_date: str|None=None, en
     return df
 
 
-def get_stock_list(*, curs: Cursor, market: str):
+def get_stock_list(*, curs: Cursor|None=None, market: str):
     conn: Connection|None = None
     if not curs:
         conn = sqlite3.connect(DBFILE)
@@ -67,9 +67,10 @@ def get_stock_list(*, curs: Cursor, market: str):
     qry = f"select DISTINCT code from StockPrice where market='{market}'"
     curs.execute(qry)
     res = curs.fetchall() 
+    res = [x[0] for x in res]
     if conn:
         conn.close()
-    return res
+    return res 
 
 
 def build_stock_price_db(start_date: str, end_date: str):
@@ -195,7 +196,7 @@ def strong_stocks(market: str):
     currval = df_market_index_week.iloc[0]["Close"] 
     ks_rate = (currval - lowest)/lowest*100
     res = []
-    codes = [x[0] for x in get_stock_list(curs=curs, market=market.lower())]
+    codes = get_stock_list(curs=curs, market=market.lower())
     last_date = df_market_index.index.max()
     start_date = last_date - timedelta(days=400)
     df_marcap = krx.get_market_cap(last_date.strftime('%Y-%m-%d'))
