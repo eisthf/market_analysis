@@ -102,38 +102,62 @@ def build_stock_price_db(start_date: str, end_date: str):
     conn.commit()
     conn.close()
 
-
+    
 def update_stock_price_db():
+    for i, n in update_stock_price_db_iter():
+        ...
+
+def update_stock_price_db_iter():
     conn = sqlite3.connect(DBFILE)
     curs = conn.cursor()
     qry = "select DISTINCT code, market from StockPrice"
     curs.execute(qry)
     res = curs.fetchall() 
-    for code, market in tqdm(res):
-        qry = "select MAX(date) from StockPrice where code=:code"
-        params = {"code": code}
-        curs.execute(qry, params)
-        res = curs.fetchall()
-        start_date = res[0][0]
-        today = date.today()
-        if today == start_date:
-            continue
-        df = fdr.DataReader(code, start_date, today.strftime("%Y-%m-%d")).reset_index()
-        for _, row in df.iterrows():
-            sp = StockPrice(code=code, 
-                            market=market, 
-                            date=row['Date'].strftime('%Y-%m-%d'), 
-                            open=row['Open'],
-                            high=row['High'],
-                            low=row['Low'],
-                            close=row['Close'],
-                            volume=row['Volume'])
-            try:
-                db_insert(curs, sp)                    
-            except IntegrityError:
-                pass
-    conn.commit()
-    conn.close()
+
+    def num_missing_days():
+        res = curs.execute("select MAX(date) from StockPrice where code='KS11'")
+
+        start_day = res.fetchone()[0]
+        start_day = datetime.strptime(start_day, "%Y-%m-%d") + timedelta(days=1)
+        start_day = start_day.strftime("%Y-%m-%d")
+        end_day = datetime.today().date().strftime("%Y-%m-%d")
+        
+        print(f"{start_day}, {end_day}")
+        df = fdr.DataReader('KS11', start_day, end_day)
+        return start_day, len(df)
+            
+    start_day, missing_days = num_missing_days()
+    if missing_days > 1:
+        n_items = len(res)
+        for i, (code, market) in tqdm(enumerate(res)):
+            qry = "select MAX(date) from StockPrice where code=:code"
+            params = {"code": code}
+            curs.execute(qry, params)
+            res = curs.fetchall()
+            start_date = res[0][0]
+            today = date.today()
+            if today == start_date:
+                continue
+            df = fdr.DataReader(code, start_date, today.strftime("%Y-%m-%d")).reset_index()
+            for _, row in df.iterrows():
+                sp = StockPrice(code=code, 
+                                market=market, 
+                                date=row['Date'].strftime('%Y-%m-%d'), 
+                                open=row['Open'],
+                                high=row['High'],
+                                low=row['Low'],
+                                close=row['Close'],
+                                volume=row['Volume'])
+                try:
+                    db_insert(curs, sp)                    
+                except IntegrityError:
+                    pass
+            yield (i, n_items)
+        conn.commit()
+        conn.close()
+    else:
+        oneday_update_stock_price_db(start_day)
+        yield (1, 1)
 
 
 def oneday_update_stock_price_db(date_: str|None = None):
@@ -154,19 +178,15 @@ def oneday_update_stock_price_db(date_: str|None = None):
                             volume=row['Volume'])
             try:
                 db_insert(curs, sp)
-            except IntegrityError:
-                pass          
-        
+            except IntegrityError as exc:
+                print(exc)
+
     columns = {'티커':'Code','시가':'Open', '고가':'High', '저가':'Low', '종가':'Close', '거래량':'Volume'}
-    df = krx.get_market_ohlcv(date_, market='KOSPI').reset_index()
-    df = df.rename(columns=columns)
-    if df.values.any():
-        update(df, 'kospi')
-        
-    df = krx.get_market_ohlcv(date_, market='KOSDAQ').reset_index()
-    df = df.rename(columns=columns)
-    if df.values.any():
-        update(df, 'kosdaq')
+    for market in ['KOSPI', 'KOSDAQ']:
+        df = krx.get_market_ohlcv(date_, market=market).reset_index()
+        df = df.rename(columns=columns)
+        if df[['Open', 'High', 'Low', 'Close']].values.any():
+            update(df, market.lower())       
      
     for code in ['KS11', 'KQ11']:
         df = fdr.DataReader(code, date_, date_).reset_index()
@@ -177,7 +197,14 @@ def oneday_update_stock_price_db(date_: str|None = None):
     conn.close()
 
 
+    
 def strong_stocks(market: str):
+    for ks_rate, df in strong_stocks_iter(market):
+        ...
+    return ks_rate, df
+    
+    
+def strong_stocks_iter(market: str):
     conn = sqlite3.connect(DBFILE)
     curs = conn.cursor()
     if market.lower() == 'kospi':
@@ -200,7 +227,8 @@ def strong_stocks(market: str):
     last_date = df_market_index.index.max()
     start_date = last_date - timedelta(days=400)
     df_marcap = krx.get_market_cap(last_date.strftime('%Y-%m-%d'))
-    for code in tqdm(codes):
+    n = len(codes)
+    for idx, code in enumerate(tqdm(codes)):
         df = get_ohlc(curs=curs, code=code, start_date=start_date.strftime('%Y-%m-%d'), end_date=last_date.strftime('%Y-%m-%d'))
         df['Date'] = pd.to_datetime(df['Date'])
         df = df.set_index('Date')
@@ -214,10 +242,13 @@ def strong_stocks(market: str):
         currval = df["Close"].iloc[-1]
         rate = (currval - lowest)/lowest*100
         if (rate > ks_rate):            
-            res.append([code, rate, df_marcap.loc[code, "시가총액"]])
+            res.append([code, rate, df_marcap.loc[code, "시가총액"]])        
+        yield (idx, n)
     
-    return ks_rate, pd.DataFrame(res, columns=["code", "rate", "marcap"])
-
+    df = pd.DataFrame(res, columns=["code", "rate", "marcap"])
+    df = df.sort_values(by="rate", ascending=False)
+    yield (ks_rate, df)
+    
 
 
 
