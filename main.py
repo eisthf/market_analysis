@@ -5,6 +5,7 @@ import market
 importlib.reload(market)
 from market import update_stock_price_db_iter, strong_stocks_iter, get_ohlc
 import pandas as pd
+from pykrx import stock as krx
 
 from mplchart.chart import Chart
 from mplchart.primitives import Candlesticks, Volume
@@ -18,6 +19,21 @@ if 'inited' not in st.session_state:
     st.session_state.strong_stock = dict(kospi=None, kosdaq=None)
     st.session_state.index = dict(kospi=0, kosdaq=0)
 
+
+SMALL_SIZE = 8
+MEDIUM_SIZE = 10
+BIGGER_SIZE = 12
+
+plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
+plt.rc('axes', titlesize=SMALL_SIZE)     # fontsize of the axes title
+plt.rc('axes', labelsize=MEDIUM_SIZE)    # fontsize of the x and y labels
+plt.rc('xtick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
+plt.rc('ytick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
+plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
+plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
+
+
+st.set_page_config(layout="wide")
 
 @st.cache_data
 def _get_ohlc(code: str):
@@ -46,6 +62,7 @@ def get_strong_stock_list(market: str):
             my_bar.progress(i/n, text= progress_text + f"({i+1} / {n})")
     my_bar.empty()
     rate, df = i, n
+    df['name'] = df['code'].map(lambda x: krx.get_market_ticker_name(x))
     return rate, df
 
 
@@ -64,10 +81,12 @@ def _strong_stocks():
 
 
 @st.cache_resource
-def get_chart(code: str):
+def get_chart(code: str, name: str, market: str, max_bars: int=120):
     df = _get_ohlc(code)
     indicators = [
-        Candlesticks(), SMA(5), SMA(10), SMA(20), SMA(60), SMA(120), SMA(240), Volume(),
+        Candlesticks(colorup='r', colordn='b', use_bars=False), 
+        SMA(5), SMA(10), SMA(20), SMA(60), SMA(120), SMA(240),
+        Volume(colorup='r', colordn='b'),
         RSI(14),
         MACD(5,20,5),
     ]
@@ -76,8 +95,8 @@ def get_chart(code: str):
     df["Date"] = pd.to_datetime(df["Date"])
     df = df.set_index("Date")
     
-    fig, ax = plt.subplots()
-    chart = Chart(title=code, max_bars=300, figure=fig)
+    fig, ax = plt.subplots(figsize=(12,6), dpi=100)
+    chart = Chart(title=f"{market.upper()} / {code} / {name}", max_bars=max_bars, figure=fig)
     chart.plot(df, indicators)
     return fig
 
@@ -96,9 +115,11 @@ def stock_nav_btn(direction: int):
         st.session_state.inited = True
     
     index = st.session_state.index[market]
-    code = st.session_state.strong_stock[market].iloc[index, :]["code"]
-    fig = get_chart(code)
-    st.pyplot(fig)
+    item = st.session_state.strong_stock[market].iloc[index, :][["code", "name"]]
+    fig_120 = get_chart(item["code"], item["name"], market, 120)
+    fig_360 = get_chart(item["code"], item["name"], market, 360)
+    st.pyplot(fig_120)
+    st.pyplot(fig_360)
 
 
 with st.sidebar:
