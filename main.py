@@ -4,6 +4,12 @@ import streamlit as st
 import market
 importlib.reload(market)
 from market import update_stock_price_db_iter, strong_stocks_iter, get_ohlc
+import pandas as pd
+
+from mplchart.chart import Chart
+from mplchart.primitives import Candlesticks, Volume
+from mplchart.indicators import ROC, SMA, EMA, RSI, MACD
+import matplotlib.pyplot as plt
 
 if 'inited' not in st.session_state:
     st.session_state.inited = False
@@ -24,8 +30,7 @@ def _update_stock_price_db():
     def update():
         progress_text = "Operation in progress. Please wait."
         my_bar = st.progress(0, text=progress_text)
-
-        for (i, n) in update_stock_price_db_iter(True):
+        for (i, n) in update_stock_price_db_iter():
             my_bar.progress(i/n, text= progress_text + f"({i} / {n})")
         my_bar.empty()
     st.button("Update DB", on_click=update)
@@ -57,9 +62,29 @@ def _strong_stocks():
     st.button("Load strong stocks", on_click=update_strong_stock)
 
 
+
+@st.cache_resource
+def get_chart(code: str):
+    df = _get_ohlc(code)
+    indicators = [
+        Candlesticks(), SMA(5), SMA(10), SMA(20), SMA(60), SMA(120), SMA(240), Volume(),
+        RSI(14),
+        MACD(5,20,5),
+    ]
+
+    df = df[["Date", "Open", "High", "Low", "Close", "Volume"]]
+    df["Date"] = pd.to_datetime(df["Date"])
+    df = df.set_index("Date")
+    
+    fig, ax = plt.subplots()
+    chart = Chart(title=code, max_bars=300, figure=fig)
+    chart.plot(df, indicators)
+    return fig
+
+
 def stock_nav_btn(direction: int):
     if st.session_state.inited == False:
-        st.write("Load strong stock first!")
+        st.warning("Load strong stock first!", icon="⚠️")
         return
     
     market = st.session_state.market.lower()
@@ -72,8 +97,8 @@ def stock_nav_btn(direction: int):
     
     index = st.session_state.index[market]
     code = st.session_state.strong_stock[market].iloc[index, :]["code"]
-    df = _get_ohlc(code)
-    st.write(df.iloc[0, :][["Code", "Market"]])
+    fig = get_chart(code)
+    st.pyplot(fig)
 
 
 with st.sidebar:
