@@ -6,6 +6,7 @@ importlib.reload(market)
 from market import update_stock_price_db_iter, strong_stocks_iter, get_ohlc
 import pandas as pd
 from pykrx import stock as krx
+import numpy as np
 
 from mplchart.chart import Chart
 from mplchart.primitives import Candlesticks, Volume
@@ -38,7 +39,6 @@ plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 # set_matplotlib_formats('svg')
 
 st.set_page_config(layout="wide")
-
 
 @st.cache_data
 def _get_ohlc(code: str):
@@ -86,7 +86,7 @@ def _strong_stocks():
 
 
 @st.cache_resource
-def get_chart(code: str, name: str, market: str, max_bars: int=120):
+def get_chart(code: str, name: str, rate: float, market: str, max_bars: int=120):
     df = _get_ohlc(code)
     indicators = [
         Candlesticks(colorup='r', colordn='b', use_bars=False), 
@@ -103,7 +103,10 @@ def get_chart(code: str, name: str, market: str, max_bars: int=120):
     df = df.set_index("Date")
     
     fig, ax = plt.subplots(figsize=(24,12), dpi=100)
-    chart = Chart(title=f"{market.upper()} / {code} / {name}", max_bars=max_bars, figure=fig)
+
+    index_rate = np.round(st.session_state.rate[market], 2)
+    rate = np.round(rate, 2)
+    chart = Chart(title=f"{market.upper()}[{index_rate}] / {code} / {name}[{rate}]", max_bars=max_bars, figure=fig)
     chart.plot(df, indicators)
     return fig
 
@@ -123,9 +126,9 @@ def stock_nav_btn(direction: int):
         st.session_state.inited = True
     
     index = st.session_state.index[market]
-    item = st.session_state.strong_stock[market].iloc[index, :][["code", "name"]]
-    fig_120 = get_chart(item["code"], item["name"], market, 120)
-    fig_360 = get_chart(item["code"], item["name"], market, 360)
+    item = st.session_state.strong_stock[market].iloc[index, :][["code", "name", "rate"]]
+    fig_120 = get_chart(item["code"], item["name"], item["rate"], market, 120)
+    fig_360 = get_chart(item["code"], item["name"], item["rate"], market, 360)
 
     svg_write(fig_120)
     svg_write(fig_360)
