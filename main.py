@@ -9,8 +9,10 @@ from pykrx import stock as krx
 
 from mplchart.chart import Chart
 from mplchart.primitives import Candlesticks, Volume
-from mplchart.indicators import ROC, SMA, EMA, RSI, MACD
+from mplchart.indicators import ROC, SMA, EMA, RSI, MACD, BBANDS
 import matplotlib.pyplot as plt
+from utils import ENVELOPE, svg_write
+
 
 if 'inited' not in st.session_state:
     st.session_state.inited = False
@@ -20,9 +22,9 @@ if 'inited' not in st.session_state:
     st.session_state.index = dict(kospi=0, kosdaq=0)
 
 
-SMALL_SIZE = 8
-MEDIUM_SIZE = 10
-BIGGER_SIZE = 12
+SMALL_SIZE = 8*2
+MEDIUM_SIZE = 10*2
+BIGGER_SIZE = 12*2
 
 plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
 plt.rc('axes', titlesize=SMALL_SIZE)     # fontsize of the axes title
@@ -32,8 +34,11 @@ plt.rc('ytick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
 plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
 plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
+# from matplotlib_inline.backend_inline import set_matplotlib_formats
+# set_matplotlib_formats('svg')
 
 st.set_page_config(layout="wide")
+
 
 @st.cache_data
 def _get_ohlc(code: str):
@@ -86,19 +91,22 @@ def get_chart(code: str, name: str, market: str, max_bars: int=120):
     indicators = [
         Candlesticks(colorup='r', colordn='b', use_bars=False), 
         SMA(5), SMA(10), SMA(20), SMA(60), SMA(120), SMA(240),
+        ENVELOPE(20, 0.1),
         Volume(colorup='r', colordn='b'),
         RSI(14),
         MACD(5,20,5),
+ 
     ]
 
     df = df[["Date", "Open", "High", "Low", "Close", "Volume"]]
     df["Date"] = pd.to_datetime(df["Date"])
     df = df.set_index("Date")
     
-    fig, ax = plt.subplots(figsize=(12,6), dpi=100)
+    fig, ax = plt.subplots(figsize=(24,12), dpi=100)
     chart = Chart(title=f"{market.upper()} / {code} / {name}", max_bars=max_bars, figure=fig)
     chart.plot(df, indicators)
     return fig
+
 
 
 def stock_nav_btn(direction: int):
@@ -118,8 +126,11 @@ def stock_nav_btn(direction: int):
     item = st.session_state.strong_stock[market].iloc[index, :][["code", "name"]]
     fig_120 = get_chart(item["code"], item["name"], market, 120)
     fig_360 = get_chart(item["code"], item["name"], market, 360)
-    st.pyplot(fig_120)
-    st.pyplot(fig_360)
+
+    svg_write(fig_120)
+    svg_write(fig_360)
+    # st.pyplot(fig_120)
+    # st.pyplot(fig_360)
 
 
 with st.sidebar:
