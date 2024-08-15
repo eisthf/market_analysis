@@ -3,7 +3,9 @@ import importlib
 import streamlit as st
 import market
 importlib.reload(market)
-from market import update_stock_price_db_iter, strong_stocks_iter, get_ohlc
+from market import (
+    update_stock_price_db_iter, get_2days_prices,
+    strong_stocks_iter, get_ohlc)
 import pandas as pd
 from pykrx import stock as krx
 import numpy as np
@@ -26,12 +28,21 @@ class Mode(Enum):
 if 'inited' not in st.session_state:
     st.session_state.inited = False
     st.session_state.market = "KOSPI"
-    st.session_state.rate = dict(kospi=0.0, kosdaq=0.0)
+    st.session_state.strong_stock_rate = dict(kospi=0.0, kosdaq=0.0)
     st.session_state.strong_stock = dict(kospi=None, kosdaq=None)
+    st.session_state.won_vol_stock = pd.DataFrame|None
     st.session_state.index = dict(kospi=0, kosdaq=0)
     st.session_state.index_begin = dict(kospi=0, kosdaq=0)
     st.session_state.index_end = dict(kospi=0, kosdaq=0)
     st.session_state.mode = Mode.UNKNOWN.value
+
+
+g_mode = {
+    Mode.UNKNOWN.value: "Unknown", 
+    Mode.STRONG_STOCK.value: "지수보다 강한 종목", 
+    Mode.WON_VOLUME.value: "거래 대금 상위", 
+    Mode.TRADING_VOLUME_STOCK.value: "1000만 주", 
+}
 
 
 SMALL_SIZE = 8*2
@@ -86,26 +97,19 @@ def update_strong_stock():
     for market in ["kospi", "kosdaq"]:
         rate, df = get_strong_stock_list(market)
         df = df.sort_values('rate').reset_index(drop=True)
-        st.session_state.rate[market] = rate
+        st.session_state.strong_stock_rate[market] = rate
         st.session_state.strong_stock[market] = df
         st.session_state.index_begin[market] = 0
         st.session_state.index_end[market] = df.index[-1]
-        print(st.session_state.strong_stock[market])
     st.session_state.inited = True
     st.session_state.mode = Mode.STRONG_STOCK.value
     market = st.session_state.market
     send_chart()
 
-# @st.fragment
-# def _strong_stocks():
-#     if st.button("Load strong stocks", on_click=update_strong_stock):
-#         st.session_state.mode = Mode.STRONG_STOCK
-#         st.rerun()
-
 
 
 @st.cache_resource
-def get_chart(code: str, name: str, rate: float, market: str, max_bars: int=120):
+def get_chart(code: str, name: str,  market: str, rate: float|None=None, max_bars: int=120):
     df = _get_ohlc(code)
     indicators = [
         Candlesticks(colorup='r', colordn='b', use_bars=False), 
@@ -120,24 +124,40 @@ def get_chart(code: str, name: str, rate: float, market: str, max_bars: int=120)
     df = df[["Date", "Open", "High", "Low", "Close", "Volume"]]
     df["Date"] = pd.to_datetime(df["Date"])
     df = df.set_index("Date")
-    
     fig, ax = plt.subplots(figsize=(24,12), dpi=100)
 
-    index_rate = np.round(st.session_state.rate[market], 2)
-    rate = np.round(rate, 2)
-    chart = Chart(title=f"{market.upper()}[{index_rate}] / {code} / {name}[{rate}]", max_bars=max_bars, figure=fig)
+    if st.session_state.mode == Mode.STRONG_STOCK.value:
+        index_rate = np.round(st.session_state.strong_stock_rate[market], 2)
+        rate = np.round(rate, 2)
+        volrate = np.round(df.iloc[-1]['Volume'] *100 / df.iloc[-2]['Volume'],2)
+        
+        title = f"{market.upper()}[{index_rate}] \
+/ {code} / {name}[{rate}] / 현재가: {int(df.iloc[-1]['Close'])}\
+/ 거래량: {int(df.iloc[-1]['Volume'])}/ 거래량 증가: {volrate}%"
+    elif st.session_state.mode == Mode.WON_VOLUME.value:
+        title=f"{market.upper()} / {code} / {name} / 상승률={np.round(rate,2)}%"
+    chart = Chart(title=title, max_bars=max_bars, figure=fig)
     chart.plot(df, indicators)
     return fig
+
 
 
 def send_chart():
     market = st.session_state.market.lower()
     index = st.session_state.index[market]
-    item = st.session_state.strong_stock[market].iloc[index, :][["code", "name", "rate"]]
-    fig_120 = get_chart(item["code"], item["name"], item["rate"], market, 120)
-    fig_360 = get_chart(item["code"], item["name"], item["rate"], market, 360)
+    if st.session_state.mode == Mode.STRONG_STOCK.value:
+        item = st.session_state.strong_stock[market].iloc[index, :][["code", "name", "rate"]]
+        fig_120 = get_chart(item["code"], item["name"], market, item["rate"], 120)
+        fig_360 = get_chart(item["code"], item["name"], market, item["rate"], 360)
+    elif st.session_state.mode == Mode.WON_VOLUME.value:
+        name = st.session_state.selected_won_vol_stock
+        df = st.session_state.won_vol_stock    
+        row = df.loc[df["name"]==name].iloc[0, :]
+        fig_120 = get_chart(row["Code"], row["name"], row["Market"], row["rate"], 120)
+        fig_360 = get_chart(row["Code"], row["name"], row["Market"], row["rate"], 360)        
     svg_write(fig_120)
     svg_write(fig_360)
+
 
 
 def stock_nav_btn(direction: int):
@@ -145,12 +165,9 @@ def stock_nav_btn(direction: int):
         st.warning("Load strong stock first!", icon="⚠️")
         return
     
-    print(f"direction: {direction}")
-    print(f"session_state.inited: {st.session_state.inited}")
     market = st.session_state.market.lower()
     if st.session_state.inited:
         st.session_state.index[market] += direction
-        print(st.session_state.index[market])
         if st.session_state.index[market] < st.session_state.index_begin[market]:
             st.session_state.index[market] = st.session_state.index_end[market]
         elif st.session_state.index[market] > st.session_state.index_end[market]:
@@ -173,26 +190,80 @@ def strong_stock_slider_change():
     send_chart()
 
 
-def strong_stock_range_slider():
+
+def on_sel_strong_stock():
+    code = st.session_state.selected_strong_stock.split(' ')[0]
+    market = st.session_state.market.lower()
+    df = st.session_state.strong_stock[market]
+    st.session_state.index[market] = df[df['code'] == code].index[0]
+    send_chart()
+
+
+
+def strong_stock_menu():
     if st.session_state.mode == Mode.STRONG_STOCK.value:
+        st.radio("Market", ["KOSPI", "KOSDAQ"], key="market")
         market = st.session_state.market.lower()
         df = st.session_state.strong_stock[market]
         rate = df["rate"]
         min_, max_ = rate.min(), rate.max()
         st.slider("Select a range of values", min_-1, max_+1, 
                    (min_, max_), on_change=strong_stock_slider_change, key="strong_rate")
+        
+        l = df.apply(lambda x: f"{x['code']} {x['name']} {round(x['rate'])}", axis=1)
+        st.selectbox("Select a stock", l, on_change=on_sel_strong_stock, key='selected_strong_stock')
+        cols = st.columns(2)
+        cols[0].button("Prev", on_click=stock_nav_btn, args=(-1, ))
+        cols[1].button("Next", on_click=stock_nav_btn, args=(1, ))
+
+
+
+
+def on_sel_won_vol_stock():
+    send_chart()
+
+
+
+def won_volume_stock_menu():
+    if st.session_state.mode == Mode.WON_VOLUME.value:
+        df = st.session_state.won_vol_stock                
+        st.selectbox("Select a stock", df['name'], on_change=on_sel_won_vol_stock, key='selected_won_vol_stock')
+
+
+def update_won_volume_stock():
+    st.session_state.mode = Mode.WON_VOLUME.value
+    df = pd.concat([market.get_2days_prices('kospi'), market.get_2days_prices('kosdaq')], axis=0)
+    df = df.sort_values(["Code", "Date"])
+    d1, d0 = df['Date'].unique()
+    df_today = df[df['Date']==d0].pipe(lambda x: x.assign(won_vol=lambda x: 0.5*(x['High'] + x['Low'])*x['Volume']))\
+                                .sort_values('won_vol', ascending=False).iloc[:30, :].set_index("Code")
+
+    df_rate = df.groupby('Code')['Close'].apply(lambda x: 100*(x.values[1]-x.values[0])/x.values[0])\
+                                        .rename('rate').to_frame()
+    df = df_today[['won_vol', 'Market']].join(df_rate['rate'])\
+                        .sort_values('won_vol', ascending=False)[:30]\
+                        .pipe(lambda x: x[x['rate'] >= 5]).reset_index(drop=False)    
+    df['name'] = df['Code'].map(lambda x: krx.get_market_ticker_name(x))
+    st.session_state.won_vol_stock = df
+    st.session_state.selected_won_vol_stock = df["name"][0]
+    send_chart()
+
+
+def update_1000_stock():
+    st.session_state.mode = Mode.TRADING_VOLUME_STOCK.value
 
 
 
 with st.sidebar:
-    st.radio("Market", ["KOSPI", "KOSDAQ"], key="market")
-    strong_stock_range_slider()
-
-    cols = st.columns(2)
-    cols[0].button("Prev", on_click=stock_nav_btn, args=(-1, ))
-    cols[1].button("Next", on_click=stock_nav_btn, args=(1, ))
+    st.subheader("{mode}".format(mode=g_mode[st.session_state.mode]))
+    strong_stock_menu()
+    won_volume_stock_menu()
     
-    st.button("Load strong stocks", on_click=update_strong_stock)
+    st.divider()
+    st.button("지수보다 강한 종목", on_click=update_strong_stock)
+    st.button("거래량 상위 종목", on_click=update_won_volume_stock)
+    st.button("1000만주 이상 종목", on_click=update_1000_stock)
+    st.divider()
     # _strong_stocks()
     _update_stock_price_db()
 
