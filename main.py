@@ -13,6 +13,14 @@ from mplchart.primitives import Candlesticks, Volume
 from mplchart.indicators import ROC, SMA, EMA, RSI, MACD, BBANDS
 import matplotlib.pyplot as plt
 from utils import ENVELOPE, svg_write
+from enum import Enum
+
+
+class Mode(Enum):
+    UNKNOWN = 0
+    STRONG_STOCK = 1
+    WON_VOLUME = 2
+    TRADING_VOLUME_STOCK = 3
 
 
 if 'inited' not in st.session_state:
@@ -21,6 +29,9 @@ if 'inited' not in st.session_state:
     st.session_state.rate = dict(kospi=0.0, kosdaq=0.0)
     st.session_state.strong_stock = dict(kospi=None, kosdaq=None)
     st.session_state.index = dict(kospi=0, kosdaq=0)
+    st.session_state.index_begin = dict(kospi=0, kosdaq=0)
+    st.session_state.index_end = dict(kospi=0, kosdaq=0)
+    st.session_state.mode = Mode.UNKNOWN.value
 
 
 SMALL_SIZE = 8*2
@@ -74,14 +85,22 @@ def get_strong_stock_list(market: str):
 def update_strong_stock():
     for market in ["kospi", "kosdaq"]:
         rate, df = get_strong_stock_list(market)
+        df = df.sort_values('rate').reset_index(drop=True)
         st.session_state.rate[market] = rate
-        st.session_state.strong_stock[market] = df 
+        st.session_state.strong_stock[market] = df
+        st.session_state.index_begin[market] = 0
+        st.session_state.index_end[market] = df.index[-1]
+        print(st.session_state.strong_stock[market])
     st.session_state.inited = True
+    st.session_state.mode = Mode.STRONG_STOCK.value
+    market = st.session_state.market
+    send_chart()
 
-
-@st.fragment
-def _strong_stocks():
-    st.button("Load strong stocks", on_click=update_strong_stock)
+# @st.fragment
+# def _strong_stocks():
+#     if st.button("Load strong stocks", on_click=update_strong_stock):
+#         st.session_state.mode = Mode.STRONG_STOCK
+#         st.rerun()
 
 
 
@@ -111,37 +130,69 @@ def get_chart(code: str, name: str, rate: float, market: str, max_bars: int=120)
     return fig
 
 
+def send_chart():
+    market = st.session_state.market.lower()
+    index = st.session_state.index[market]
+    item = st.session_state.strong_stock[market].iloc[index, :][["code", "name", "rate"]]
+    fig_120 = get_chart(item["code"], item["name"], item["rate"], market, 120)
+    fig_360 = get_chart(item["code"], item["name"], item["rate"], market, 360)
+    svg_write(fig_120)
+    svg_write(fig_360)
+
 
 def stock_nav_btn(direction: int):
     if st.session_state.inited == False:
         st.warning("Load strong stock first!", icon="⚠️")
         return
     
+    print(f"direction: {direction}")
+    print(f"session_state.inited: {st.session_state.inited}")
     market = st.session_state.market.lower()
-    n = st.session_state.strong_stock[market].shape[0]
     if st.session_state.inited:
         st.session_state.index[market] += direction
-        st.session_state.index[market] %= n
+        print(st.session_state.index[market])
+        if st.session_state.index[market] < st.session_state.index_begin[market]:
+            st.session_state.index[market] = st.session_state.index_end[market]
+        elif st.session_state.index[market] > st.session_state.index_end[market]:
+            st.session_state.index[market] = st.session_state.index_begin[market]
     else:
         st.session_state.inited = True
-    
-    index = st.session_state.index[market]
-    item = st.session_state.strong_stock[market].iloc[index, :][["code", "name", "rate"]]
-    fig_120 = get_chart(item["code"], item["name"], item["rate"], market, 120)
-    fig_360 = get_chart(item["code"], item["name"], item["rate"], market, 360)
 
-    svg_write(fig_120)
-    svg_write(fig_360)
-    # st.pyplot(fig_120)
-    # st.pyplot(fig_360)
+    send_chart()
+
+
+
+def strong_stock_slider_change():
+    min_, max_ = st.session_state.strong_rate
+    market = st.session_state.market.lower()
+    df = st.session_state.strong_stock[market]
+    idx = df[(min_ <= df['rate']) & (df['rate'] <= max_)].index
+    st.session_state.index_begin[market] = idx[0]
+    st.session_state.index_end[market] = idx[-1]
+    st.session_state.index[market] = idx[0]
+    send_chart()
+
+
+def strong_stock_range_slider():
+    if st.session_state.mode == Mode.STRONG_STOCK.value:
+        market = st.session_state.market.lower()
+        df = st.session_state.strong_stock[market]
+        rate = df["rate"]
+        min_, max_ = rate.min(), rate.max()
+        st.slider("Select a range of values", min_-1, max_+1, 
+                   (min_, max_), on_change=strong_stock_slider_change, key="strong_rate")
+
 
 
 with st.sidebar:
     st.radio("Market", ["KOSPI", "KOSDAQ"], key="market")
+    strong_stock_range_slider()
 
     cols = st.columns(2)
     cols[0].button("Prev", on_click=stock_nav_btn, args=(-1, ))
     cols[1].button("Next", on_click=stock_nav_btn, args=(1, ))
     
-    _strong_stocks()
+    st.button("Load strong stocks", on_click=update_strong_stock)
+    # _strong_stocks()
     _update_stock_price_db()
+
