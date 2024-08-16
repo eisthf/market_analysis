@@ -71,6 +71,13 @@ def _get_ohlc(code: str):
     return df
 
 
+
+@st.cache_data
+def get_market_cap():
+    return (market.get_market_cap()['시가총액'].rename('market_cap') / 10**8).astype(int)
+
+
+
 @st.fragment
 def _update_stock_price_db():
     def update():
@@ -133,18 +140,19 @@ def get_chart(code: str, name: str,  market: str, rate: float|None=None, max_bar
     volume = int(df.iloc[-1]['Volume']/10000)
     volrate = np.round(df.iloc[-1]['Volume'] *100 / df.iloc[-2]['Volume'],2)
     fig, ax = plt.subplots(figsize=(24,12), dpi=100)
+    market_cap = get_market_cap()[code]
 
     if st.session_state.mode == Mode.STRONG_STOCK.value:
         index_rate = np.round(st.session_state.strong_stock_rate[market], 2)
         rate = np.round(rate, 2)        
         title = f"{market.upper()}[{index_rate}%] \
-/ {code} / {name}[{rate}%] / 현재가: {int(df.iloc[-1]['Close'])}\
+/ {code} / {name}[{rate}%] / 시총: {market_cap}억 /현재가: {int(df.iloc[-1]['Close'])}\
 / 거래량: {int(df.iloc[-1]['Volume'])}/ 거래량: {volume}만 /거래량 증가: {volrate}%"
         
     elif st.session_state.mode == Mode.WON_VOLUME.value:
         df_won_vol = st.session_state.won_vol_stock
         won_vol = int(df_won_vol[df_won_vol["Code"]==code].iloc[0, :]["won_vol"]/1000000)
-        title=f"{market.upper()} / {code} / {name} / 상승률={np.round(rate,2)}% / 거래대금:{won_vol}백만 / 거래량: {volume}만 /거래량 증가: {volrate}%"
+        title=f"{market.upper()} / {code} / {name} / 시총: {market_cap}억 /상승률={np.round(rate,2)}% / 거래대금:{won_vol}백만 / 거래량: {volume}만 /거래량 증가: {volrate}%"
     
     chart = Chart(title=title, max_bars=max_bars, figure=fig)
     chart.plot(df, indicators)

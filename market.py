@@ -206,7 +206,19 @@ def oneday_update_stock_price_db(date_: str|None = None):
     conn.close()
 
 
+
+def get_market_cap():
+    conn = sqlite3.connect(DBFILE)
+    curs = conn.cursor()
+    df = get_ohlc(curs=curs, code='KS11')
+    d = df['Date'].max()
+    df = krx.get_market_cap(d)
+
+    conn.close()
+    return df
     
+
+
 def strong_stocks(market: str):
     for ks_rate, df in strong_stocks_iter(market):
         ...
