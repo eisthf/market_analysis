@@ -9,6 +9,7 @@ from market import (
 import pandas as pd
 from pykrx import stock as krx
 import numpy as np
+from datetime import datetime, date
 
 from mplchart.chart import Chart
 from mplchart.primitives import Candlesticks, Volume
@@ -124,18 +125,22 @@ def get_chart(code: str, name: str,  market: str, rate: float|None=None, max_bar
     df = df[["Date", "Open", "High", "Low", "Close", "Volume"]]
     df["Date"] = pd.to_datetime(df["Date"])
     df = df.set_index("Date")
+    volume = int(df.iloc[-1]['Volume']/10000)
+    volrate = np.round(df.iloc[-1]['Volume'] *100 / df.iloc[-2]['Volume'],2)
     fig, ax = plt.subplots(figsize=(24,12), dpi=100)
 
     if st.session_state.mode == Mode.STRONG_STOCK.value:
         index_rate = np.round(st.session_state.strong_stock_rate[market], 2)
-        rate = np.round(rate, 2)
-        volrate = np.round(df.iloc[-1]['Volume'] *100 / df.iloc[-2]['Volume'],2)
+        rate = np.round(rate, 2)        
+        title = f"{market.upper()}[{index_rate}%] \
+/ {code} / {name}[{rate}%] / 현재가: {int(df.iloc[-1]['Close'])}\
+/ 거래량: {int(df.iloc[-1]['Volume'])}/ 거래량: {volume}만 /거래량 증가: {volrate}%"
         
-        title = f"{market.upper()}[{index_rate}] \
-/ {code} / {name}[{rate}] / 현재가: {int(df.iloc[-1]['Close'])}\
-/ 거래량: {int(df.iloc[-1]['Volume'])}/ 거래량 증가: {volrate}%"
     elif st.session_state.mode == Mode.WON_VOLUME.value:
-        title=f"{market.upper()} / {code} / {name} / 상승률={np.round(rate,2)}%"
+        df_won_vol = st.session_state.won_vol_stock
+        won_vol = int(df_won_vol[df_won_vol["Code"]==code].iloc[0, :]["won_vol"]/1000000)
+        title=f"{market.upper()} / {code} / {name} / 상승률={np.round(rate,2)}% / 거래대금:{won_vol}백만 / 거래량: {volume}만 /거래량 증가: {volrate}%"
+    
     chart = Chart(title=title, max_bars=max_bars, figure=fig)
     chart.plot(df, indicators)
     return fig
@@ -143,16 +148,16 @@ def get_chart(code: str, name: str,  market: str, rate: float|None=None, max_bar
 
 
 def send_chart():
-    market = st.session_state.market.lower()
-    index = st.session_state.index[market]
     if st.session_state.mode == Mode.STRONG_STOCK.value:
+        market = st.session_state.market.lower()
+        index = st.session_state.index[market]
         item = st.session_state.strong_stock[market].iloc[index, :][["code", "name", "rate"]]
         fig_120 = get_chart(item["code"], item["name"], market, item["rate"], 120)
         fig_360 = get_chart(item["code"], item["name"], market, item["rate"], 360)
     elif st.session_state.mode == Mode.WON_VOLUME.value:
         name = st.session_state.selected_won_vol_stock
-        df = st.session_state.won_vol_stock    
-        row = df.loc[df["name"]==name].iloc[0, :]
+        df = st.session_state.won_vol_stock  # Date, won_vol, Market, rate, name, Volume
+        row = df[df["name"]==name].iloc[0, :]
         fig_120 = get_chart(row["Code"], row["name"], row["Market"], row["rate"], 120)
         fig_360 = get_chart(row["Code"], row["name"], row["Market"], row["rate"], 360)        
     svg_write(fig_120)
@@ -218,8 +223,16 @@ def strong_stock_menu():
 
 
 
-
 def on_sel_won_vol_stock():
+    send_chart()
+
+
+
+def won_volume_day_pick():
+    date_: str = st.session_state.won_volume_date
+    df = get_won_volume_stock(date_)
+    st.session_state.selected_won_vol_stock = df.loc[df.index[0], "name"]
+    st.session_state.won_vol_stock = df
     send_chart()
 
 
@@ -228,11 +241,14 @@ def won_volume_stock_menu():
     if st.session_state.mode == Mode.WON_VOLUME.value:
         df = st.session_state.won_vol_stock                
         st.selectbox("Select a stock", df['name'], on_change=on_sel_won_vol_stock, key='selected_won_vol_stock')
+        st.date_input("날짜", date.today(), on_change=won_volume_day_pick, key="won_volume_date")
 
 
-def update_won_volume_stock():
-    st.session_state.mode = Mode.WON_VOLUME.value
-    df = pd.concat([market.get_2days_prices('kospi'), market.get_2days_prices('kosdaq')], axis=0)
+
+@st.cache_data
+def get_won_volume_stock(date_: str|None=None):
+    df = pd.concat([market.get_2days_prices('kospi', date_), market.get_2days_prices('kosdaq', date_)], axis=0)
+    df = df.groupby('Code').filter(lambda x: len(x)>1)
     df = df.sort_values(["Code", "Date"])
     d1, d0 = df['Date'].unique()
     df_today = df[df['Date']==d0].pipe(lambda x: x.assign(won_vol=lambda x: 0.5*(x['High'] + x['Low'])*x['Volume']))\
@@ -240,16 +256,24 @@ def update_won_volume_stock():
 
     df_rate = df.groupby('Code')['Close'].apply(lambda x: 100*(x.values[1]-x.values[0])/x.values[0])\
                                         .rename('rate').to_frame()
-    df = df_today[['won_vol', 'Market']].join(df_rate['rate'])\
+    df = df_today[['won_vol', 'Market', 'Volume']].join(df_rate['rate'])\
                         .sort_values('won_vol', ascending=False)[:30]\
                         .pipe(lambda x: x[x['rate'] >= 5]).reset_index(drop=False)    
     df['name'] = df['Code'].map(lambda x: krx.get_market_ticker_name(x))
+    return df # Date, won_vol, Market, rate, name, Volume
+
+
+
+def on_won_volume_stock():
+    st.session_state.mode = Mode.WON_VOLUME.value
+    df = get_won_volume_stock() # Date, won_vol, Market, rate, name, Volume
     st.session_state.won_vol_stock = df
     st.session_state.selected_won_vol_stock = df["name"][0]
     send_chart()
 
 
-def update_1000_stock():
+
+def on_1000_stock():
     st.session_state.mode = Mode.TRADING_VOLUME_STOCK.value
 
 
@@ -261,8 +285,8 @@ with st.sidebar:
     
     st.divider()
     st.button("지수보다 강한 종목", on_click=update_strong_stock)
-    st.button("거래량 상위 종목", on_click=update_won_volume_stock)
-    st.button("1000만주 이상 종목", on_click=update_1000_stock)
+    st.button("거래대금 상위 종목", on_click=on_won_volume_stock)
+    st.button("1000만주 이상 종목", on_click=on_1000_stock)
     st.divider()
     # _strong_stocks()
     _update_stock_price_db()

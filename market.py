@@ -23,6 +23,7 @@ def resample_df(df, period='W-FRI'):
     return wm_df
 
 
+
 class StockPrice(BaseModel):
     code: str
     market: str
@@ -34,11 +35,13 @@ class StockPrice(BaseModel):
     volume: float
 
 
+
 def db_insert(curs: Cursor, info: StockPrice):
     qry = "insert into StockPrice values" \
           "(:code, :market, :date, :open, :high, :low, :close, :volume)"
     params = info.model_dump()
     curs.execute(qry, params)
+
 
 
 def get_ohlc(*, curs: Cursor|None=None, code: str, start_date: str|None=None, end_date: str|None=None):
@@ -59,6 +62,7 @@ def get_ohlc(*, curs: Cursor|None=None, code: str, start_date: str|None=None, en
     return df
 
 
+
 def get_stock_list(*, curs: Cursor|None=None, market: str):
     conn: Connection|None = None
     if not curs:
@@ -71,6 +75,7 @@ def get_stock_list(*, curs: Cursor|None=None, market: str):
     if conn:
         conn.close()
     return res 
+
 
 
 def build_stock_price_db(start_date: str, end_date: str):
@@ -102,10 +107,13 @@ def build_stock_price_db(start_date: str, end_date: str):
     conn.commit()
     conn.close()
 
+
     
 def update_stock_price_db():
     for i, n in update_stock_price_db_iter():
         ...
+
+
 
 def update_stock_price_db_iter():
     conn = sqlite3.connect(DBFILE)
@@ -160,6 +168,7 @@ def update_stock_price_db_iter():
         yield (1, 1)
 
 
+
 def oneday_update_stock_price_db(date_: str|None = None):
     conn = sqlite3.connect(DBFILE)
     curs = conn.cursor()
@@ -203,6 +212,7 @@ def strong_stocks(market: str):
         ...
     return ks_rate, df
     
+
     
 def strong_stocks_iter(market: str):
     conn = sqlite3.connect(DBFILE)
@@ -250,8 +260,44 @@ def strong_stocks_iter(market: str):
     yield (ks_rate, df)
     
 
+    
+def get_2days_prices(market: str, date_: str|None=None):
+    conn = sqlite3.connect(DBFILE)
+    curs = conn.cursor()
 
+    if not date_:
+        qry = f"""
+SELECT * 
+FROM StockPrice 
+WHERE market='{'KS11' if market.lower() == 'kospi' else 'KQ11'}'
+ORDER BY date desc
+limit 2
+    """
+    else:
+        qry = f"""
+SELECT * 
+FROM StockPrice 
+WHERE market='{'KS11' if market.lower() == 'kospi' else 'KQ11'}'
+    AND date <= '{date_}'
+ORDER BY date desc
+limit 2
+"""
+        
+    curs.execute(qry)
+    res = curs.fetchall()
 
+    qry = f"""
+SELECT * 
+FROM StockPrice 
+WHERE market='{market.lower()}'
+    AND (date BETWEEN '{res[1][2]}' AND '{res[0][2]}')
+"""    
+    curs.execute(qry)
+    res = curs.fetchall()       
+
+    df = pd.DataFrame(res, columns=["Code", "Market", "Date", "Open", "High", "Low", "Close", "Volume"])
+    conn.close()
+    return df
 
 
 
