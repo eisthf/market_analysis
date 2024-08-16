@@ -102,6 +102,7 @@ def update_strong_stock(week:int):
         df = df.sort_values('rate').reset_index(drop=True)
         st.session_state.strong_stock_rate[market] = rate
         st.session_state.strong_stock[market] = df
+        st.session_state.index[market] = 0
         st.session_state.index_begin[market] = 0
         st.session_state.index_end[market] = df.index[-1]
     st.session_state.inited = True
@@ -181,6 +182,23 @@ def stock_nav_btn(direction: int):
             st.session_state.index[market] = st.session_state.index_end[market]
         elif st.session_state.index[market] > st.session_state.index_end[market]:
             st.session_state.index[market] = st.session_state.index_begin[market]
+            
+        code = st.session_state.selected_strong_stock.split(' ')[0]   
+
+        idx_begin = st.session_state.strong_stock_sel_list.index[0]
+        idx_end = st.session_state.strong_stock_sel_list.index[-1]    
+        l = st.session_state.strong_stock_sel_list
+        idx = l[l.str.contains(code)].index[0] + direction
+        if idx > idx_end:
+            idx = idx_begin
+        elif idx < idx_begin:
+            idx = idx_end
+        st.session_state.selected_strong_stock = st.session_state.strong_stock_sel_list[idx]
+        
+        # l = [x.split(' ')[0] for x in st.session_state.strong_stock_sel_list]
+        # idx = l.index(code)
+        # idx = (idx + direction) % len(l)
+        # st.session_state.selected_strong_stock = st.session_state.strong_stock_sel_list.iloc[idx]
     else:
         st.session_state.inited = True
 
@@ -208,8 +226,10 @@ def on_sel_strong_stock():
     send_chart()
 
 
+
 def on_change_strong_week():
     update_strong_stock(st.session_state.strong_week)
+
 
 
 def strong_stock_menu():
@@ -222,8 +242,12 @@ def strong_stock_menu():
         st.slider("Select a range of values", min_-1, max_+1, 
                    (min_, max_), on_change=strong_stock_slider_change, key="strong_rate")
         
-        l = df.apply(lambda x: f"{x['code']} {x['name']} {round(x['rate'])}", axis=1)
-        st.selectbox("Select a stock", l, on_change=on_sel_strong_stock, key='selected_strong_stock')
+        idx_begin = st.session_state.index_begin[market]
+        idx_end = st.session_state.index_end[market]
+        df = df.iloc[idx_begin:idx_end+1]
+        l = st.session_state.strong_stock_sel_list = \
+                df.apply(lambda x: f"{x['code']} {x['name']} {round(x['rate'])}", axis=1)
+        st.selectbox("Select a stock", l, on_change=on_sel_strong_stock, key='selected_strong_stock')        
         cols = st.columns(2)
         cols[0].button("Prev", on_click=stock_nav_btn, args=(-1, ))
         cols[1].button("Next", on_click=stock_nav_btn, args=(1, ))
