@@ -33,6 +33,7 @@ if 'inited' not in st.session_state:
     st.session_state.strong_stock = dict(kospi=None, kosdaq=None)
     st.session_state.won_vol_stock = pd.DataFrame|None
     st.session_state.strong_week = 52
+    st.session_state.prev_strong_week = 52
     st.session_state.index = dict(kospi=0, kosdaq=0)
     st.session_state.index_begin = dict(kospi=0, kosdaq=0)
     st.session_state.index_end = dict(kospi=0, kosdaq=0)
@@ -106,6 +107,7 @@ def update_strong_stock(week:int):
     st.session_state.inited = True
     st.session_state.mode = Mode.STRONG_STOCK.value
     market = st.session_state.market
+    st.session_state.prev_strong_week = st.session_state.strong_week
     st.session_state.strong_week = week
     send_chart()
 
@@ -225,8 +227,9 @@ def strong_stock_menu():
         cols = st.columns(2)
         cols[0].button("Prev", on_click=stock_nav_btn, args=(-1, ))
         cols[1].button("Next", on_click=stock_nav_btn, args=(1, ))
-        st.number_input("Insert a number", 
+        st.number_input("Week periods", 
                          min_value=1, max_value=52, 
+                         value=st.session_state.prev_strong_week,
                          on_change=on_change_strong_week,
                          key="strong_week")
 
