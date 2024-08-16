@@ -214,7 +214,7 @@ def strong_stocks(market: str):
     
 
     
-def strong_stocks_iter(market: str):
+def strong_stocks_iter(market: str, week: int=52):
     conn = sqlite3.connect(DBFILE)
     curs = conn.cursor()
     if market.lower() == 'kospi':
@@ -228,7 +228,7 @@ def strong_stocks_iter(market: str):
     df['Date'] = pd.to_datetime(df['Date'])
     df_market_index = df.set_index('Date')    
     df_market_index_week = resample_df(df_market_index, period='W-FRI')[::-1]
-    date = df_market_index_week[:52]["Low"].idxmin()
+    date = df_market_index_week[:week]["Low"].idxmin()
     lowest = df_market_index_week.loc[date, "Low"]
     currval = df_market_index_week.iloc[0]["Close"] 
     ks_rate = (currval - lowest)/lowest*100
@@ -243,9 +243,9 @@ def strong_stocks_iter(market: str):
         df['Date'] = pd.to_datetime(df['Date'])
         df = df.set_index('Date')
         df_week = resample_df(df, period='W-FRI')[::-1]
-        if len(df_week) < 52:
+        if len(df_week) < week:
             continue
-        date = df_week[:52]["Low"].idxmin()        
+        date = df_week[:week]["Low"].idxmin()        
         lowest = df_week.loc[date, "Low"]
         if lowest == 0:
             continue

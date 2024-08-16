@@ -32,6 +32,7 @@ if 'inited' not in st.session_state:
     st.session_state.strong_stock_rate = dict(kospi=0.0, kosdaq=0.0)
     st.session_state.strong_stock = dict(kospi=None, kosdaq=None)
     st.session_state.won_vol_stock = pd.DataFrame|None
+    st.session_state.strong_week = 52
     st.session_state.index = dict(kospi=0, kosdaq=0)
     st.session_state.index_begin = dict(kospi=0, kosdaq=0)
     st.session_state.index_end = dict(kospi=0, kosdaq=0)
@@ -81,10 +82,10 @@ def _update_stock_price_db():
 
 
 @st.cache_data(show_spinner=False)
-def get_strong_stock_list(market: str):
+def get_strong_stock_list(market: str, week:int):
     progress_text = "Operation in progress. Please wait."
     my_bar = st.progress(0, text=progress_text)
-    it = strong_stocks_iter(market)
+    it = strong_stocks_iter(market, week)
     for (i, n) in it:
         if isinstance(i, int):
             my_bar.progress(i/n, text= progress_text + f"({i+1} / {n})")
@@ -94,9 +95,9 @@ def get_strong_stock_list(market: str):
     return rate, df
 
 
-def update_strong_stock():
+def update_strong_stock(week:int):
     for market in ["kospi", "kosdaq"]:
-        rate, df = get_strong_stock_list(market)
+        rate, df = get_strong_stock_list(market, week)
         df = df.sort_values('rate').reset_index(drop=True)
         st.session_state.strong_stock_rate[market] = rate
         st.session_state.strong_stock[market] = df
@@ -105,6 +106,7 @@ def update_strong_stock():
     st.session_state.inited = True
     st.session_state.mode = Mode.STRONG_STOCK.value
     market = st.session_state.market
+    st.session_state.strong_week = week
     send_chart()
 
 
@@ -204,6 +206,9 @@ def on_sel_strong_stock():
     send_chart()
 
 
+def on_change_strong_week():
+    update_strong_stock(st.session_state.strong_week)
+
 
 def strong_stock_menu():
     if st.session_state.mode == Mode.STRONG_STOCK.value:
@@ -220,6 +225,10 @@ def strong_stock_menu():
         cols = st.columns(2)
         cols[0].button("Prev", on_click=stock_nav_btn, args=(-1, ))
         cols[1].button("Next", on_click=stock_nav_btn, args=(1, ))
+        st.number_input("Insert a number", 
+                         min_value=1, max_value=52, 
+                         on_change=on_change_strong_week,
+                         key="strong_week")
 
 
 
@@ -284,7 +293,7 @@ with st.sidebar:
     won_volume_stock_menu()
     
     st.divider()
-    st.button("지수보다 강한 종목", on_click=update_strong_stock)
+    st.button("지수보다 강한 종목", on_click=update_strong_stock, args=(st.session_state.strong_week,))
     st.button("거래대금 상위 종목", on_click=on_won_volume_stock)
     st.button("1000만주 이상 종목", on_click=on_1000_stock)
     st.divider()
