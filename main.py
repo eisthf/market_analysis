@@ -33,12 +33,11 @@ if 'inited' not in st.session_state:
     st.session_state.strong_stock = dict(kospi=None, kosdaq=None)
     st.session_state.won_vol_stock = pd.DataFrame|None
     st.session_state.strong_week = 52
-    st.session_state.prev_strong_week = 52
     st.session_state.index = dict(kospi=0, kosdaq=0)
     st.session_state.index_begin = dict(kospi=0, kosdaq=0)
     st.session_state.index_end = dict(kospi=0, kosdaq=0)
     st.session_state.mode = Mode.UNKNOWN.value
-
+    
 
 g_mode = {
     Mode.UNKNOWN.value: "Unknown", 
@@ -103,7 +102,7 @@ def get_strong_stock_list(market: str, week:int):
     return rate, df
 
 
-def update_strong_stock(week:int):
+def update_strong_stock(week:int=52):
     for market in ["kospi", "kosdaq"]:
         rate, df = get_strong_stock_list(market, week)
         df = df.sort_values('rate').reset_index(drop=True)
@@ -115,7 +114,6 @@ def update_strong_stock(week:int):
     st.session_state.inited = True
     st.session_state.mode = Mode.STRONG_STOCK.value
     market = st.session_state.market
-    st.session_state.prev_strong_week = st.session_state.strong_week
     st.session_state.strong_week = week
     send_chart()
 
@@ -247,12 +245,14 @@ def strong_stock_menu():
         df = st.session_state.strong_stock[market]
         rate = df["rate"]
         min_, max_ = rate.min(), rate.max()
-        st.slider("Select a range of values", min_-1, max_+1, 
-                   (min_, max_), on_change=strong_stock_slider_change, key="strong_rate")
-        
+
         idx_begin = st.session_state.index_begin[market]
         idx_end = st.session_state.index_end[market]
         df = df.iloc[idx_begin:idx_end+1]
+
+        st.slider("Select a range of values", min_-1, max_+1, 
+                   (df['rate'].min(), df['rate'].max()), on_change=strong_stock_slider_change, key="strong_rate")
+        
         l = st.session_state.strong_stock_sel_list = \
                 df.apply(lambda x: f"{x['code']} {x['name']} {round(x['rate'])}", axis=1)
         st.selectbox("Select a stock", l, on_change=on_sel_strong_stock, key='selected_strong_stock')        
@@ -260,8 +260,7 @@ def strong_stock_menu():
         cols[0].button("Prev", on_click=stock_nav_btn, args=(-1, ))
         cols[1].button("Next", on_click=stock_nav_btn, args=(1, ))
         st.number_input("Week periods", 
-                         min_value=1, max_value=52, 
-                         value=st.session_state.prev_strong_week,
+                         min_value=1, max_value=52,                         
                          on_change=on_change_strong_week,
                          key="strong_week")
 
@@ -328,7 +327,7 @@ with st.sidebar:
     won_volume_stock_menu()
     
     st.divider()
-    st.button("지수보다 강한 종목", on_click=update_strong_stock, args=(st.session_state.strong_week,))
+    st.button("지수보다 강한 종목", on_click=update_strong_stock)
     st.button("거래대금 상위 종목", on_click=on_won_volume_stock)
     st.button("1000만주 이상 종목", on_click=on_1000_stock)
     st.divider()
