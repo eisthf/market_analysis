@@ -37,6 +37,7 @@ if 'inited' not in st.session_state:
     st.session_state.index_begin = dict(kospi=0, kosdaq=0)
     st.session_state.index_end = dict(kospi=0, kosdaq=0)
     st.session_state.mode = Mode.UNKNOWN.value
+
     
 
 g_mode = {
@@ -115,7 +116,6 @@ def update_strong_stock(week:int=52):
     st.session_state.mode = Mode.STRONG_STOCK.value
     market = st.session_state.market
     st.session_state.strong_week = week
-    send_chart()
 
 
 
@@ -171,8 +171,9 @@ def send_chart():
         row = df[df["name"]==name].iloc[0, :]
         fig_120 = get_chart(row["Code"], row["name"], row["Market"], row["rate"], 120)
         fig_360 = get_chart(row["Code"], row["name"], row["Market"], row["rate"], 360)        
-    svg_write(fig_120)
-    svg_write(fig_360)
+    if st.session_state.mode in [Mode.STRONG_STOCK.value, Mode.WON_VOLUME.value]:
+        svg_write(fig_120)
+        svg_write(fig_360)
 
 
 
@@ -208,7 +209,6 @@ def stock_nav_btn(direction: int):
     else:
         st.session_state.inited = True
 
-    send_chart()
 
 
 
@@ -220,7 +220,6 @@ def strong_stock_slider_change():
     st.session_state.index_begin[market] = idx[0]
     st.session_state.index_end[market] = idx[-1]
     st.session_state.index[market] = idx[0]
-    send_chart()
 
 
 
@@ -229,7 +228,6 @@ def on_sel_strong_stock():
     market = st.session_state.market.lower()
     df = st.session_state.strong_stock[market]
     st.session_state.index[market] = df[df['code'] == code].index[0]
-    send_chart()
 
 
 
@@ -240,8 +238,7 @@ def on_change_strong_week():
 
 def strong_stock_menu():
     if st.session_state.mode == Mode.STRONG_STOCK.value:
-        st.radio("Market", ["KOSPI", "KOSDAQ"], key="market")
-        market = st.session_state.market.lower()
+        market = st.radio("Market", ["KOSPI", "KOSDAQ"], key="market").lower()
         df = st.session_state.strong_stock[market]
         rate = df["rate"]
         min_, max_ = rate.min(), rate.max()
@@ -267,7 +264,7 @@ def strong_stock_menu():
 
 
 def on_sel_won_vol_stock():
-    send_chart()
+    ...
 
 
 
@@ -276,7 +273,6 @@ def won_volume_day_pick():
     df = get_won_volume_stock(date_)
     st.session_state.selected_won_vol_stock = df.loc[df.index[0], "name"]
     st.session_state.won_vol_stock = df
-    send_chart()
 
 
 
@@ -312,7 +308,6 @@ def on_won_volume_stock():
     df = get_won_volume_stock() # Date, won_vol, Market, rate, name, Volume
     st.session_state.won_vol_stock = df
     st.session_state.selected_won_vol_stock = df["name"][0]
-    send_chart()
 
 
 
@@ -334,3 +329,5 @@ with st.sidebar:
     # _strong_stocks()
     _update_stock_price_db()
 
+
+send_chart()
