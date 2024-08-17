@@ -3,9 +3,7 @@ import importlib
 import streamlit as st
 import market
 importlib.reload(market)
-from market import (
-    update_stock_price_db_iter, get_2days_prices,
-    strong_stocks_iter, get_ohlc)
+from market import update_stock_price_db_iter, strong_stocks_iter
 import pandas as pd
 from pykrx import stock as krx
 import numpy as np
@@ -66,8 +64,8 @@ plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 st.set_page_config(layout="wide")
 
 @st.cache_data
-def _get_ohlc(code: str):
-    df = get_ohlc(code=code)
+def get_ohlc(code: str):
+    df = market.get_ohlc(code=code)
     return df
 
 
@@ -79,7 +77,7 @@ def get_market_cap():
 
 
 @st.fragment
-def _update_stock_price_db():
+def update_stock_price_db():
     def update():
         progress_text = "Operation in progress. Please wait."
         my_bar = st.progress(0, text=progress_text)
@@ -121,7 +119,7 @@ def update_strong_stock(week:int=52):
 
 @st.cache_resource
 def get_chart(code: str, name: str,  market: str, rate: float|None=None, max_bars: int=120):
-    df = _get_ohlc(code)
+    df = get_ohlc(code)
     indicators = [
         Candlesticks(colorup='r', colordn='b', use_bars=False), 
         SMA(5), SMA(10), SMA(20), SMA(60), SMA(120), SMA(240),
@@ -211,7 +209,6 @@ def stock_nav_btn(direction: int):
 
 
 
-
 def strong_stock_slider_change():
     min_, max_ = st.session_state.strong_rate
     market = st.session_state.market.lower()
@@ -263,11 +260,6 @@ def strong_stock_menu():
 
 
 
-def on_sel_won_vol_stock():
-    ...
-
-
-
 def won_volume_day_pick():
     date_: str = st.session_state.won_volume_date
     df = get_won_volume_stock(date_)
@@ -279,7 +271,7 @@ def won_volume_day_pick():
 def won_volume_stock_menu():
     if st.session_state.mode == Mode.WON_VOLUME.value:
         df = st.session_state.won_vol_stock                
-        st.selectbox("Select a stock", df['name'], on_change=on_sel_won_vol_stock, key='selected_won_vol_stock')
+        st.selectbox("Select a stock", df['name'], key='selected_won_vol_stock')
         st.date_input("날짜", date.today(), on_change=won_volume_day_pick, key="won_volume_date")
 
 
@@ -326,8 +318,7 @@ with st.sidebar:
     st.button("거래대금 상위 종목", on_click=on_won_volume_stock)
     st.button("1000만주 이상 종목", on_click=on_1000_stock)
     st.divider()
-    # _strong_stocks()
-    _update_stock_price_db()
+    update_stock_price_db()
 
 
 send_chart()
