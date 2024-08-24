@@ -3,7 +3,9 @@ import importlib
 import streamlit as st
 import market
 importlib.reload(market)
-from market import update_stock_price_db_iter, strong_stocks_iter
+from market import (update_stock_price_db_iter, 
+                    strong_stocks_iter,
+                    update_krx_stock_price_db_iter)
 import pandas as pd
 from pykrx import stock as krx
 import numpy as np
@@ -81,7 +83,7 @@ def update_stock_price_db():
     def update():
         progress_text = "Operation in progress. Please wait."
         my_bar = st.progress(0, text=progress_text)
-        for (i, n) in update_stock_price_db_iter():
+        for (i, n) in update_krx_stock_price_db_iter(): 
             my_bar.progress(i/n, text= progress_text + f"({i} / {n})")
         my_bar.empty()
     st.button("Update DB", on_click=update)

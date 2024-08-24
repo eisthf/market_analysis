@@ -169,9 +169,46 @@ def update_stock_price_db_iter():
 
 
 
-def oneday_update_stock_price_db(date_: str|None = None):
+def update_krx_stock_price_db_iter():
     conn = sqlite3.connect(DBFILE)
     curs = conn.cursor()
+    qry = "select DISTINCT code, market from StockPrice"
+    curs.execute(qry)
+    res = curs.fetchall() 
+
+    def num_missing_days():
+        res = curs.execute("select MAX(date) from StockPrice where code='KS11'")
+
+        start_day = res.fetchone()[0]
+        start_day = datetime.strptime(start_day, "%Y-%m-%d") + timedelta(days=1)
+        start_day = start_day.strftime("%Y-%m-%d")
+        end_day = datetime.today().date().strftime("%Y-%m-%d")
+        
+        print(f"{start_day}, {end_day}")
+        df = fdr.DataReader('KS11', start_day, end_day)
+        return start_day, end_day, df
+            
+    start_day, end_day, df = num_missing_days()
+    n_items = len(df)
+    if len(df) > 1:
+        for (i, _date) in enumerate(fdr.DataReader('KS11', start_day, end_day).index):
+            oneday_update_stock_price_db(conn, _date.strftime("%Y-%m-%d"))            
+            yield (i, n_items)
+        conn.commit()
+        conn.close()
+    else:
+        oneday_update_stock_price_db(conn, start_day)
+        yield (1, 1)        
+
+
+
+def oneday_update_stock_price_db(conn: Connection|None=None, date_: str|None = None):
+    _conn: Connection|None = None
+    if not conn:
+        _conn = sqlite3.connect(DBFILE)
+        curs = _conn.cursor()
+    else:
+        curs = conn.cursor()
     if not date_:
         date_ = date.today().strftime("%Y-%m-%d")
         
@@ -201,9 +238,10 @@ def oneday_update_stock_price_db(date_: str|None = None):
         df = fdr.DataReader(code, date_, date_).reset_index()
         df['Code'] = code
         update(df, code)
-        
-    conn.commit()
-    conn.close()
+
+    if _conn:    
+        _conn.commit()
+        _conn.close()
 
 
 
