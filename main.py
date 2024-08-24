@@ -125,7 +125,7 @@ def get_chart(code: str, name: str,  market: str, rate: float|None=None, max_bar
     indicators = [
         Candlesticks(colorup='r', colordn='b', use_bars=False), 
         SMA(5), SMA(10), SMA(20), SMA(60), SMA(120), SMA(240),
-        ENVELOPE(20, 0.1),
+        ENVELOPE(20, 10),
         Volume(colorup='r', colordn='b'),
         RSI(14),
         MACD(5,20,5),
