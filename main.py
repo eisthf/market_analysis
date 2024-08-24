@@ -237,7 +237,7 @@ def on_change_strong_week():
 
 def strong_stock_menu():
     if st.session_state.mode == Mode.STRONG_STOCK.value:
-        market = st.radio("Market", ["KOSPI", "KOSDAQ"], key="market").lower()
+        market = st.radio("Market", ["KOSPI", "KOSDAQ"], horizontal=True, key="market").lower()
         df = st.session_state.strong_stock[market]
         rate = df["rate"]
         min_, max_ = rate.min(), rate.max()
