@@ -123,7 +123,7 @@ def update_strong_stock(week:int=52):
 
 
 @st.cache_resource
-def get_chart(code: str, name: str,  market: str, refdate: str,
+def get_chart(code: str, name: str,  market: str, refdate: str, last_date: str,
               rate: float|None=None, max_bars: int=120):
     df = get_ohlc(code)
     indicators = [
@@ -137,7 +137,8 @@ def get_chart(code: str, name: str,  market: str, refdate: str,
     ]
 
     df = df[["Date", "Open", "High", "Low", "Close", "Volume"]]
-    df = df[df["Date"] <= refdate]
+    df = df[df["Date"] <= last_date]
+    refdate = df[df["Date"] <= refdate]["Date"].max()
     df["Date"] = pd.to_datetime(df["Date"])
     df = df.set_index("Date")
     volume = int(df.iloc[-1]['Volume']/10000)
@@ -158,28 +159,29 @@ def get_chart(code: str, name: str,  market: str, refdate: str,
         title=f"{market.upper()} / {code} / {name} / 시총: {market_cap}억 /상승률={np.round(rate,2)}% / 거래대금:{won_vol}백만 / 거래량: {volume}만 /거래량 증가: {volrate}%"
     
     chart = Chart(title=title, max_bars=max_bars, figure=fig)
-    chart.plot(df, indicators)
+    chart.plot(df, indicators, refdate=refdate)
     return fig
 
 
 
 def send_chart():
+    refdate = st.session_state.ref_date.strftime("%Y-%m-%d")
     if not st.session_state.show_today:
-        refdate = st.session_state.ref_date.strftime("%Y-%m-%d")
+        last_date = refdate
     else:
-        refdate = date.today().strftime("%Y-%m-%d")
+        last_date = date.today().strftime("%Y-%m-%d")
     if st.session_state.mode == Mode.STRONG_STOCK.value:
         market = st.session_state.market.lower()
         index = st.session_state.index[market]
         item = st.session_state.strong_stock[market].iloc[index, :][["code", "name", "rate"]]
-        fig_120 = get_chart(item["code"], item["name"], market, refdate, item["rate"], 120)
-        fig_360 = get_chart(item["code"], item["name"], market, refdate, item["rate"], 360)
+        fig_120 = get_chart(item["code"], item["name"], market, refdate, last_date, item["rate"], 120)
+        fig_360 = get_chart(item["code"], item["name"], market, refdate, last_date, item["rate"], 360)
     elif st.session_state.mode == Mode.WON_VOLUME.value:
         name = st.session_state.selected_won_vol_stock
         df = st.session_state.won_vol_stock  # Date, won_vol, Market, rate, name, Volume
         row = df[df["name"]==name].iloc[0, :]
-        fig_120 = get_chart(row["Code"], row["name"], row["Market"], refdate, row["rate"], 120)
-        fig_360 = get_chart(row["Code"], row["name"], row["Market"], refdate, row["rate"], 360)        
+        fig_120 = get_chart(row["Code"], row["name"], row["Market"], refdate, last_date, row["rate"], 120)
+        fig_360 = get_chart(row["Code"], row["name"], row["Market"], refdate, last_date, row["rate"], 360)        
     if st.session_state.mode in [Mode.STRONG_STOCK.value, Mode.WON_VOLUME.value]:
         svg_write(fig_120)
         svg_write(fig_360)
