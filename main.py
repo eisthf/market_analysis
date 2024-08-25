@@ -33,6 +33,8 @@ if 'inited' not in st.session_state:
     st.session_state.strong_stock = dict(kospi=None, kosdaq=None)
     st.session_state.won_vol_stock = pd.DataFrame|None
     st.session_state.strong_week = 52
+    st.session_state.ref_date = date.today()
+    st.session_state.show_today = False
     st.session_state.index = dict(kospi=0, kosdaq=0)
     st.session_state.index_begin = dict(kospi=0, kosdaq=0)
     st.session_state.index_end = dict(kospi=0, kosdaq=0)
@@ -90,10 +92,10 @@ def update_stock_price_db():
 
 
 @st.cache_data(show_spinner=False)
-def get_strong_stock_list(market: str, week:int):
+def get_strong_stock_list(market: str, week:int, ref_date: str):
     progress_text = "Operation in progress. Please wait."
     my_bar = st.progress(0, text=progress_text)
-    it = strong_stocks_iter(market, week)
+    it = strong_stocks_iter(market, week, ref_date)
     for (i, n) in it:
         if isinstance(i, int):
             my_bar.progress(i/n, text= progress_text + f"({i+1} / {n})")
@@ -104,8 +106,9 @@ def get_strong_stock_list(market: str, week:int):
 
 
 def update_strong_stock(week:int=52):
+    ref_date = st.session_state.ref_date.strftime("%Y-%m-%d")
     for market in ["kospi", "kosdaq"]:
-        rate, df = get_strong_stock_list(market, week)
+        rate, df = get_strong_stock_list(market, week, ref_date)
         df = df.sort_values('rate').reset_index(drop=True)
         st.session_state.strong_stock_rate[market] = rate
         st.session_state.strong_stock[market] = df
@@ -120,7 +123,8 @@ def update_strong_stock(week:int=52):
 
 
 @st.cache_resource
-def get_chart(code: str, name: str,  market: str, rate: float|None=None, max_bars: int=120):
+def get_chart(code: str, name: str,  market: str, refdate: str,
+              rate: float|None=None, max_bars: int=120):
     df = get_ohlc(code)
     indicators = [
         Candlesticks(colorup='r', colordn='b', use_bars=False), 
@@ -133,6 +137,7 @@ def get_chart(code: str, name: str,  market: str, rate: float|None=None, max_bar
     ]
 
     df = df[["Date", "Open", "High", "Low", "Close", "Volume"]]
+    df = df[df["Date"] <= refdate]
     df["Date"] = pd.to_datetime(df["Date"])
     df = df.set_index("Date")
     volume = int(df.iloc[-1]['Volume']/10000)
@@ -159,18 +164,22 @@ def get_chart(code: str, name: str,  market: str, rate: float|None=None, max_bar
 
 
 def send_chart():
+    if not st.session_state.show_today:
+        refdate = st.session_state.ref_date.strftime("%Y-%m-%d")
+    else:
+        refdate = date.today().strftime("%Y-%m-%d")
     if st.session_state.mode == Mode.STRONG_STOCK.value:
         market = st.session_state.market.lower()
         index = st.session_state.index[market]
         item = st.session_state.strong_stock[market].iloc[index, :][["code", "name", "rate"]]
-        fig_120 = get_chart(item["code"], item["name"], market, item["rate"], 120)
-        fig_360 = get_chart(item["code"], item["name"], market, item["rate"], 360)
+        fig_120 = get_chart(item["code"], item["name"], market, refdate, item["rate"], 120)
+        fig_360 = get_chart(item["code"], item["name"], market, refdate, item["rate"], 360)
     elif st.session_state.mode == Mode.WON_VOLUME.value:
         name = st.session_state.selected_won_vol_stock
         df = st.session_state.won_vol_stock  # Date, won_vol, Market, rate, name, Volume
         row = df[df["name"]==name].iloc[0, :]
-        fig_120 = get_chart(row["Code"], row["name"], row["Market"], row["rate"], 120)
-        fig_360 = get_chart(row["Code"], row["name"], row["Market"], row["rate"], 360)        
+        fig_120 = get_chart(row["Code"], row["name"], row["Market"], refdate, row["rate"], 120)
+        fig_360 = get_chart(row["Code"], row["name"], row["Market"], refdate, row["rate"], 360)        
     if st.session_state.mode in [Mode.STRONG_STOCK.value, Mode.WON_VOLUME.value]:
         svg_write(fig_120)
         svg_write(fig_360)
@@ -231,7 +240,8 @@ def on_sel_strong_stock():
 
 
 def on_change_strong_week():
-    update_strong_stock(st.session_state.strong_week)
+    state = st.session_state
+    update_strong_stock(state.strong_week)
 
 
 
@@ -262,11 +272,14 @@ def strong_stock_menu():
 
 
 
-def won_volume_day_pick():
-    date_: str = st.session_state.won_volume_date
-    df = get_won_volume_stock(date_)
-    st.session_state.selected_won_vol_stock = df.loc[df.index[0], "name"]
-    st.session_state.won_vol_stock = df
+def on_refdate_change():
+    date_: str = st.session_state.ref_date.strftime("%Y-%m-%d")
+    if st.session_state.mode == Mode.WON_VOLUME.value:
+        df = get_won_volume_stock(date_)
+        st.session_state.selected_won_vol_stock = df.loc[df.index[0], "name"]
+        st.session_state.won_vol_stock = df
+    elif st.session_state.mode == Mode.STRONG_STOCK.value:
+        update_strong_stock(st.session_state.strong_week)
 
 
 
@@ -274,8 +287,6 @@ def won_volume_stock_menu():
     if st.session_state.mode == Mode.WON_VOLUME.value:
         df = st.session_state.won_vol_stock                
         st.selectbox("Select a stock", df['name'], key='selected_won_vol_stock')
-        st.date_input("날짜", date.today(), on_change=won_volume_day_pick, key="won_volume_date")
-
 
 
 @st.cache_data
@@ -284,6 +295,7 @@ def get_won_volume_stock(date_: str|None=None):
     df = df.groupby('Code').filter(lambda x: len(x)>1)
     df = df.sort_values(["Code", "Date"])
     d1, d0 = df['Date'].unique()
+    st.session_state.ref_date = datetime.strptime(d0, "%Y-%m-%d")
     df_today = df[df['Date']==d0].pipe(lambda x: x.assign(won_vol=lambda x: 0.5*(x['High'] + x['Low'])*x['Volume']))\
                                 .sort_values('won_vol', ascending=False).iloc[:30, :].set_index("Code")
 
@@ -299,7 +311,8 @@ def get_won_volume_stock(date_: str|None=None):
 
 def on_won_volume_stock():
     st.session_state.mode = Mode.WON_VOLUME.value
-    df = get_won_volume_stock() # Date, won_vol, Market, rate, name, Volume
+    refdate = st.session_state.ref_date
+    df = get_won_volume_stock(refdate) # Date, won_vol, Market, rate, name, Volume
     st.session_state.won_vol_stock = df
     st.session_state.selected_won_vol_stock = df["name"][0]
 
@@ -316,6 +329,8 @@ with st.sidebar:
     won_volume_stock_menu()
     
     st.divider()
+    st.date_input("날짜", date.today(), on_change=on_refdate_change, key="ref_date")
+    st.checkbox("today", key="show_today")
     st.button("지수보다 강한 종목", on_click=update_strong_stock)
     st.button("거래대금 상위 종목", on_click=on_won_volume_stock)
     st.button("1000만주 이상 종목", on_click=on_1000_stock)

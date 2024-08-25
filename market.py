@@ -264,7 +264,7 @@ def strong_stocks(market: str):
     
 
     
-def strong_stocks_iter(market: str, week: int=52):
+def strong_stocks_iter(market: str, week: int, refdate: str):
     conn = sqlite3.connect(DBFILE)
     curs = conn.cursor()
     if market.lower() == 'kospi':
@@ -276,7 +276,9 @@ def strong_stocks_iter(market: str, week: int=52):
     
     df = get_ohlc(curs=curs, code=market_)
     df['Date'] = pd.to_datetime(df['Date'])
-    df_market_index = df.set_index('Date')    
+    refdate = datetime.strptime(refdate, "%Y-%m-%d")
+    df = df[df['Date'] <= refdate]
+    df_market_index = df.set_index('Date')
     df_market_index_week = resample_df(df_market_index, period='W-FRI')[::-1]
     date = df_market_index_week[:week]["Low"].idxmin()
     lowest = df_market_index_week.loc[date, "Low"]
@@ -291,6 +293,7 @@ def strong_stocks_iter(market: str, week: int=52):
     for idx, code in enumerate(tqdm(codes)):
         df = get_ohlc(curs=curs, code=code, start_date=start_date.strftime('%Y-%m-%d'), end_date=last_date.strftime('%Y-%m-%d'))
         df['Date'] = pd.to_datetime(df['Date'])
+        df = df[df['Date'] <= refdate]
         df = df.set_index('Date')
         df_week = resample_df(df, period='W-FRI')[::-1]
         if len(df_week) < week:
