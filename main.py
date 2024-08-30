@@ -138,11 +138,12 @@ def get_chart(code: str, name: str,  market: str, refdate: str, last_date: str,
 
     df = df[["Date", "Open", "High", "Low", "Close", "Volume"]]
     df = df[df["Date"] <= last_date]
-    refdate = df[df["Date"] <= refdate]["Date"].max()
+    df_ref = df[df["Date"] <= refdate]
+    refdate = df_ref["Date"].max()
     df["Date"] = pd.to_datetime(df["Date"])
     df = df.set_index("Date")
-    volume = int(df.iloc[-1]['Volume']/10000)
-    volrate = np.round(df.iloc[-1]['Volume'] *100 / df.iloc[-2]['Volume'],2)
+    volume = int(df_ref.iloc[-1]['Volume']/10000)
+    volrate = np.round(df_ref.iloc[-1]['Volume'] *100 / df_ref.iloc[-2]['Volume'], 2)
     fig, ax = plt.subplots(figsize=(24,12), dpi=100)
     market_cap = get_market_cap()[code]
 
@@ -151,7 +152,7 @@ def get_chart(code: str, name: str,  market: str, refdate: str, last_date: str,
         rate = np.round(rate, 2)        
         title = f"{market.upper()}[{index_rate}%] \
 / {code} / {name}[{rate}%] / 시총: {market_cap}억 /현재가: {int(df.iloc[-1]['Close'])}\
-/ 거래량: {int(df.iloc[-1]['Volume'])}/ 거래량: {volume}만 /거래량 증가: {volrate}%"
+/ 거래량: {int(df_ref.iloc[-1]['Volume'])}/ 거래량: {volume}만 /거래량 증가: {volrate}%"
         
     elif st.session_state.mode == Mode.WON_VOLUME.value:
         df_won_vol = st.session_state.won_vol_stock
